@@ -24,7 +24,7 @@ embedded-io-async = { workspace = true }
 edge-nal = { workspace = true }
 heapless = { workspace = true }
 # Do not require these features and conditionalize the code instead
-embassy-net = { version = "0.6", features = [
+embassy-net = { git = "https://github.com/choudhary463/embassy.git" , features = [
     "tcp",
     "udp",
     "dns",

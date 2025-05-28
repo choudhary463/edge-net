@@ -1,6 +1,7 @@
 use core::net::SocketAddr;
 use core::pin::pin;
 use core::ptr::NonNull;
+use core::task::{Context, Poll};
 
 use edge_nal::{Close, Readable, TcpBind, TcpConnect, TcpShutdown, TcpSplit};
 
@@ -116,6 +117,10 @@ impl<'d, const N: usize, const TX_SZ: usize, const RX_SZ: usize> TcpSocket<'d, N
             stack_buffers,
             socket_buffers,
         })
+    }
+
+    pub fn poll_read_ready(&self, cx: &mut Context<'_>) -> Poll<()> {
+        self.socket.poll_read_ready(cx)
     }
 
     async fn close(&mut self, what: Close) -> Result<(), TcpError> {

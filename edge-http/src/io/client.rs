@@ -257,10 +257,14 @@ where
         Ok(())
     }
 
-    pub async fn close(mut self) -> Result<(), Error<T::Error>> {
+    pub async fn close(&mut self) -> Result<(), Error<T::Error>> {
         let res = self.complete().await;
 
-        if let Some(mut io) = self.unbind().io.take() {
+        let mut state = self.unbind();
+        let io = state.io.take();
+        *self = Self::Unbound(state);
+
+        if let Some(mut io) = io {
             io.close(Close::Both).await.map_err(Error::Io)?;
             let _ = io.abort().await;
         }
