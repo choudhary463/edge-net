@@ -94,7 +94,7 @@ impl<const N: usize, const TX_SZ: usize, const RX_SZ: usize> edge_nal::TcpAccept
 /// A TCP socket
 /// Implements the `Read` and `Write` traits from `embedded-io-async`, as well as the `TcpSplit` factory trait from `edge-nal`
 pub struct TcpSocket<'d, const N: usize, const TX_SZ: usize, const RX_SZ: usize> {
-    socket: embassy_net::tcp::TcpSocket<'d>,
+    pub socket: embassy_net::tcp::TcpSocket<'d>,
     stack_buffers: &'d TcpBuffers<N, TX_SZ, RX_SZ>,
     socket_buffers: NonNull<([u8; TX_SZ], [u8; RX_SZ])>,
 }
@@ -117,10 +117,6 @@ impl<'d, const N: usize, const TX_SZ: usize, const RX_SZ: usize> TcpSocket<'d, N
             stack_buffers,
             socket_buffers,
         })
-    }
-
-    pub fn poll_read_ready(&self, cx: &mut Context<'_>) -> Poll<()> {
-        self.socket.poll_read_ready(cx)
     }
 
     async fn close(&mut self, what: Close) -> Result<(), TcpError> {
