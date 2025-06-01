@@ -7,6 +7,7 @@ use core::pin::pin;
 
 use std::io;
 use std::net::{self, Shutdown, TcpStream, ToSocketAddrs, UdpSocket as StdUdpSocket};
+use std::task::{Context, Poll};
 
 #[cfg(not(feature = "async-io-mini"))]
 use async_io::Async;
@@ -18,8 +19,7 @@ use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use embedded_io_async::{ErrorType, Read, Write};
 
 use edge_nal::{
-    AddrType, Dns, MulticastV4, MulticastV6, Readable, TcpAccept, TcpBind, TcpConnect, TcpShutdown,
-    TcpSplit, UdpBind, UdpConnect, UdpReceive, UdpSend, UdpSplit,
+    AddrType, Dns, MulticastV4, MulticastV6, PollReadable, Readable, TcpAccept, TcpBind, TcpConnect, TcpShutdown, TcpSplit, UdpBind, UdpConnect, UdpReceive, UdpSend, UdpSplit
 };
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -183,6 +183,12 @@ impl Write for &TcpSocket {
 impl Readable for &TcpSocket {
     async fn readable(&mut self) -> Result<(), Self::Error> {
         self.0.readable().await
+    }
+}
+
+impl PollReadable for &TcpSocket {
+    fn poll_readable(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_readable(cx)
     }
 }
 

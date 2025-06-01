@@ -3,7 +3,7 @@ use core::pin::pin;
 use core::ptr::NonNull;
 use core::task::{Context, Poll};
 
-use edge_nal::{Close, Readable, TcpBind, TcpConnect, TcpShutdown, TcpSplit};
+use edge_nal::{Close, PollReadable, Readable, TcpBind, TcpConnect, TcpShutdown, TcpSplit};
 
 use embassy_futures::join::join;
 
@@ -205,6 +205,17 @@ impl<const N: usize, const TX_SZ: usize, const RX_SZ: usize> Readable
     async fn readable(&mut self) -> Result<(), Self::Error> {
         self.socket.wait_read_ready().await;
         Ok(())
+    }
+}
+
+impl<const N: usize, const TX_SZ: usize, const RX_SZ: usize> PollReadable
+    for TcpSocket<'_, N, TX_SZ, RX_SZ>
+{
+    fn poll_readable(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.socket.poll_read_ready(cx) {
+            Poll::Ready(t) => Poll::Ready(Ok(t)),
+            Poll::Pending => Poll::Pending
+        }
     }
 }
 
