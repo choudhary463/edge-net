@@ -10,13 +10,13 @@
 use core::{
     fmt::{self, Display},
     future::Future,
-    net::SocketAddr,
+    net::SocketAddr, task::{Context, Poll},
 };
 
 use embassy_time::Duration;
 use embedded_io_async::{ErrorKind, ErrorType, Read, Write};
 
-use crate::{Readable, TcpAccept, TcpConnect, TcpShutdown, TcpSplit};
+use crate::{PollReadable, Readable, TcpAccept, TcpConnect, TcpShutdown, TcpSplit};
 
 /// Error type for the `with_timeout` function and `WithTimeout` struct.
 #[derive(Debug)]
@@ -172,6 +172,23 @@ where
 {
     async fn readable(&mut self) -> Result<(), Self::Error> {
         with_timeout(self.1, self.0.readable()).await
+    }
+}
+
+impl<T> PollReadable for WithTimeout<T>
+where
+    T: PollReadable,
+{
+    fn poll_readable(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.0.poll_readable(cx) {
+            Poll::Ready(t) => {
+                match t {
+                    Ok(t) => Poll::Ready(Ok(t)),
+                    Err(e) => Poll::Ready(Err(WithTimeoutError::Error(e)))
+                }
+            }
+            Poll::Pending => Poll::Pending
+        }
     }
 }
 

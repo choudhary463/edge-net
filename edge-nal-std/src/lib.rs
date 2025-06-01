@@ -160,6 +160,12 @@ impl Readable for TcpSocket {
     }
 }
 
+impl PollReadable for TcpSocket {
+    fn poll_readable(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_readable(cx)
+    }
+}
+
 impl ErrorType for &TcpSocket {
     type Error = io::Error;
 }
