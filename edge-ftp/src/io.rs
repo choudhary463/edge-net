@@ -9,13 +9,15 @@ pub enum FtpError<T: TcpConnect> {
     CodeParseError,
     UnexpectedResponse(u32),
     BufferError,
-    PasswordRequired
+    PasswordRequired,
+    WriteZero
 }
 
 pub enum FtpCommand<'b> {
     User(&'b str),
     Pass(&'b str),
     Retr(&'b str),
+    Store(&'b str),
     Pasv
 }
 
@@ -25,6 +27,7 @@ impl<'a> FtpCommand<'a> {
             FtpCommand::User(s) => Self::write_with_prefix(b"USER ", Some(s), buf),
             FtpCommand::Pass(s) => Self::write_with_prefix(b"PASS ", Some(s), buf),
             FtpCommand::Retr(s) => Self::write_with_prefix(b"RETR ", Some(s), buf),
+            FtpCommand::Store(s) => Self::write_with_prefix(b"STOR ", Some(s), buf),
             FtpCommand::Pasv => Self::write_with_prefix(b"PASV", None, buf)
         }
     }
@@ -117,8 +120,8 @@ impl<'a, T: TcpConnect> FtpClient<'a, T> {
         Ok(ftp)
     }
 
-    pub async fn retrv<'b>(&mut self, file_name: &'a str, buf: &'b mut [u8]) -> Result<&'b [u8], FtpError<T>> {
-        self.retr_file(file_name, |mut stream|  {
+    pub async fn download_full<'b>(&mut self, file_name: &'a str, buf: &'b mut [u8]) -> Result<&'b [u8], FtpError<T>> {
+        self.download(file_name, |mut stream|  {
             async move {
                 let mut total = 0;
                 while total < buf.len() {
@@ -138,7 +141,25 @@ impl<'a, T: TcpConnect> FtpClient<'a, T> {
         }).await
     }
 
-    async fn retr_file<F, P, D>(&mut self, file_name: &'a str, reader: F) -> Result<D, FtpError<T>>
+    pub async fn download_chunk<F>(&mut self, file_name: &'a str, chunk: &'a mut [u8], mut on_chunk: F) -> Result<(), FtpError<T>>
+    where
+        F: FnMut(&[u8]) -> Result<(), FtpError<T>>,
+    {
+        self.download(file_name, |mut stream| {
+            async move {
+                loop {
+                    let n = stream.read(chunk).await.map_err(FtpError::TcpErr)?;
+                    if n == 0 {
+                        break;
+                    }
+                    on_chunk(&chunk[..n])?;
+                }
+                Ok(())
+            }
+        }).await
+    }
+
+    async fn download<F, P, D>(&mut self, file_name: &'a str, reader: F) -> Result<D, FtpError<T>>
     where 
         F: FnOnce(T::Socket<'a>) -> P,
         P: core::future::Future<Output = Result<D, FtpError<T>>>
@@ -146,6 +167,59 @@ impl<'a, T: TcpConnect> FtpClient<'a, T> {
         let stream = self.data_command(FtpCommand::Retr(file_name)).await?;
         self.read_response_in(&[FtpStatus::AboutToSend, FtpStatus::AlreadyOpen]).await?;
         let res = reader(stream).await?;
+        self.read_response_in(&[FtpStatus::ClosingDataConnection, FtpStatus::RequestedFileActionOk]).await?;
+        Ok(res)
+    }
+
+    pub async fn upload_full(&mut self, file_name: &'a str, data: &[u8]) -> Result<(), FtpError<T>> {
+        self.upload(file_name, |mut stream| {
+            async move {
+                let mut offset = 0;
+                while offset < data.len() {
+                    let n = stream.write(&data[offset..]).await.map_err(FtpError::TcpErr)?;
+                    if n == 0 {
+                        return Err(FtpError::WriteZero);
+                    }
+                    offset += n;
+                }
+                Ok(())
+            }
+        }).await
+    }
+
+    pub async fn upload_chunk<F>(&mut self, file_name: &'a str, chunk: &'a mut [u8], mut on_chunk: F) -> Result<(), FtpError<T>>
+    where
+        F: FnMut(&mut [u8]) -> Result<usize, FtpError<T>>,
+    {
+        self.upload(file_name, |mut stream| {
+            async move {
+                loop {
+                    let n = on_chunk(chunk)?;
+                    if n == 0 {
+                        break;
+                    }
+                    let mut written = 0;
+                    while written < n {
+                        let nw = stream.write(&chunk[written..n]).await.map_err(FtpError::TcpErr)?;
+                        if nw == 0 {
+                            return Err(FtpError::WriteZero);
+                        }
+                        written += nw;
+                    }
+                }
+                Ok(())
+            }
+        }).await
+    }
+
+    async fn upload<F, P, D>(&mut self, file_name: &'a str, writer: F) -> Result<D, FtpError<T>>
+    where 
+        F: FnOnce(T::Socket<'a>) -> P,
+        P: core::future::Future<Output = Result<D, FtpError<T>>>
+    {
+        let stream = self.data_command(FtpCommand::Store(file_name)).await?;
+        self.read_response_in(&[FtpStatus::AboutToSend, FtpStatus::AlreadyOpen]).await?;
+        let res = writer(stream).await?;
         self.read_response_in(&[FtpStatus::ClosingDataConnection, FtpStatus::RequestedFileActionOk]).await?;
         Ok(res)
     }
@@ -211,7 +285,7 @@ impl<'a, T: TcpConnect> FtpClient<'a, T> {
         let mut found = false;
         let mut len = 0;
         while offset + len < self.buf.len() {
-            let x = self.io.read(&mut self.buf[offset..offset + 1]).await.map_err(FtpError::TcpErr)?;
+            let x = self.io.read(&mut self.buf[offset + len..offset + len + 1]).await.map_err(FtpError::TcpErr)?;
             if x == 0 {
                 break;
             }
