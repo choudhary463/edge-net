@@ -15,3 +15,4 @@ pub use edge_nal_embassy as embassy;
 pub use edge_nal_std as std;
 pub use edge_raw as raw;
 pub use edge_ws as ws;
+pub use edge_ftp as ftp;
